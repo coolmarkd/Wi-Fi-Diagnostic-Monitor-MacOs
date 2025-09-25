@@ -117,7 +117,8 @@ get_wifi_interface() {
 
 get_signal_strength_level() {
     local rssi="$1"
-    if [ -z "$rssi" ]; then
+    # Check if rssi is empty, contains non-numeric characters, or is redacted
+    if [ -z "$rssi" ] || [[ ! "$rssi" =~ ^-?[0-9]+$ ]] || [[ "$rssi" == *"redacted"* ]]; then
         echo "Unknown"
     elif [ "$rssi" -ge -50 ]; then
         echo "Excellent (100%)"
