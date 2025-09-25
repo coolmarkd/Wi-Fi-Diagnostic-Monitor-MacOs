@@ -20,7 +20,7 @@ THRESHOLD_LOSS=5
 INTERVAL=3 # 1 minute
 TRACEROUTE_INTERVAL=300  # 5 minutes
 LAST_TRACEROUTE_TIME=0
-WIFI_UNREDACTOR="$HOME/Applications/wifi-unredactor.app/Contents/MacOS/wifi-unredactor"
+WIFI_UNREDACTOR="/Users/markd/Applications/wifi-unredactor.app/Contents/MacOS/wifi-unredactor"
 WDUTIL="sudo /usr/bin/wdutil"
 
 # ========== Functions ==========
@@ -56,11 +56,35 @@ get_value() {
         }'
 }
 
+# Enhanced version that handles redacted values
+get_value_safe() {
+    local result
+    result=$(get_value "$1" "$2")
+    # If result is empty or contains redacted text, return empty
+    if [[ -z "$result" ]] || [[ "$result" == *"redacted"* ]]; then
+        echo ""
+    else
+        echo "$result"
+    fi
+}
+
 get_string_value() {
     echo "$1" | awk -v key="$2" '
         $0 ~ "^ *"key"[ ]*:" {
             sub(".*: ", "", $0); print $0
         }'
+}
+
+# Enhanced version that handles redacted values
+get_string_value_safe() {
+    local result
+    result=$(get_string_value "$1" "$2")
+    # If result contains redacted text, return empty
+    if [[ "$result" == *"redacted"* ]]; then
+        echo ""
+    else
+        echo "$result"
+    fi
 }
 
 get_json_value() {
@@ -187,21 +211,22 @@ while true; do
     BSSID=$(get_wifi_bssid "$INFO")
     INTERFACE=$(get_wifi_interface "$INFO")
     
-    # For signal strength and other metrics, we still need wdutil since wifi-unredactor doesn't provide these
+    # For signal strength and other metrics, we need wdutil since wifi-unredactor doesn't provide these
+    # Always try to get signal metrics from wdutil, but handle redacted values gracefully
+    # Note: On macOS Sonoma+, wdutil may show <redacted> for signal metrics even when wifi-unredactor works
     if [[ $(is_json "$INFO") == "true" ]]; then
-        # wifi-unredactor doesn't provide signal strength, get it from wdutil
+        # wifi-unredactor provided SSID/BSSID, now get signal metrics from wdutil
         WDUTIL_INFO=$(get_wdutil_info)
-        SIGNAL=$(get_value "$WDUTIL_INFO" "RSSI")
-        NOISE=$(get_value "$WDUTIL_INFO" "Noise")
-        RATE=$(get_value "$WDUTIL_INFO" "Tx Rate")
-        CHANNEL=$(get_string_value "$WDUTIL_INFO" "Channel")
     else
-        # Using wdutil output directly
-        SIGNAL=$(get_value "$INFO" "RSSI")
-        NOISE=$(get_value "$INFO" "Noise")
-        RATE=$(get_value "$INFO" "Tx Rate")
-        CHANNEL=$(get_string_value "$INFO" "Channel")
+        # Using wdutil output for everything
+        WDUTIL_INFO="$INFO"
     fi
+    
+    # Extract signal metrics using safe functions that handle redacted values
+    SIGNAL=$(get_value_safe "$WDUTIL_INFO" "RSSI")
+    NOISE=$(get_value_safe "$WDUTIL_INFO" "Noise")
+    RATE=$(get_value_safe "$WDUTIL_INFO" "Tx Rate")
+    CHANNEL=$(get_string_value_safe "$WDUTIL_INFO" "Channel")
 
     LOSS=$(ping_loss)
     LATENCY=$(ping_stats)
